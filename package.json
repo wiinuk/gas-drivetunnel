@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "gas-drivetunnel",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "wiinuk",
+  "license": "MIT",
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.66"
+  }
+}
