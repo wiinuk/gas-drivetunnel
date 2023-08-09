@@ -40,7 +40,7 @@ const config = {
         }),
         // @ts-ignore
         new WebpackShellPluginNext({
-            onDoneWatch: {
+            onAfterDone: {
                 scripts: ["echo 'clasp push'", "npx clasp push --force"],
                 blocking: true,
             },
