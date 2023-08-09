@@ -1,0 +1,38 @@
+{
+    "json.schemas": [{
+        "fileMatch": ["appsscript.json"],
+        "url": "http://json.schemastore.org/appsscript"
+    },
+    {
+        "fileMatch": [".clasp.json"],
+        "url": "http://json.schemastore.org/clasp"
+    }],
+    "[typescript]": {
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": true
+      },
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescriptreact]": {
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": true
+      },
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascript]": {
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": true
+      },
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascriptreact]": {
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": true
+      },
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    }
+}

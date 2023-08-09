@@ -3,12 +3,30 @@
   "name": "gas-drivetunnel",
   "version": "0.1.0",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack",
+    "debug": "webpack --watch",
+    "deploy": "clasp push"
   },
   "author": "wiinuk",
   "license": "MIT",
   "devDependencies": {
     "@google/clasp": "^2.4.2",
-    "@types/google-apps-script": "^1.0.66"
+    "@types/google-apps-script": "^1.0.66",
+    "@typescript-eslint/eslint-plugin": "^6.3.0",
+    "@typescript-eslint/experimental-utils": "^5.62.0",
+    "@typescript-eslint/parser": "^6.3.0",
+    "copy-webpack-plugin": "^11.0.0",
+    "eslint": "^8.46.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-rulesdir": "^0.2.2",
+    "fork-ts-checker-webpack-plugin": "^8.0.0",
+    "gas-webpack-plugin": "^2.5.0",
+    "prettier": "^3.0.1",
+    "ts-loader": "^9.4.4",
+    "typescript": "^5.1.6",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4",
+    "webpack-shell-plugin-next": "^2.3.1"
   }
 }
