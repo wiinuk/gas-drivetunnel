@@ -1,7 +1,6 @@
 // @ts-check
 const path = require("node:path");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
-const GasPlugin = require("gas-webpack-plugin");
 const WebpackShellPluginNext = require("webpack-shell-plugin-next");
 
 const entryPoint = path.join(__dirname, "source", "Code.ts");
@@ -9,6 +8,7 @@ const entryPoint = path.join(__dirname, "source", "Code.ts");
 /** @type {import("webpack").Configuration} */
 const config = {
     mode: "development",
+    target: ["web", "es5"],
     devtool: false,
     entry: {
         Code: entryPoint,
@@ -33,8 +33,6 @@ const config = {
         ],
     },
     plugins: [
-        // @ts-ignore
-        new GasPlugin(),
         new CopyWebpackPlugin({
             patterns: [{ from: "./source/appsscript.json" }],
         }),
