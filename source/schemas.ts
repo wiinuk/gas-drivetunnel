@@ -26,14 +26,6 @@ export const routeRowSchema = z.tuple([
 ]);
 export type RouteRow = z.infer<typeof routeRowSchema>;
 
-export const getRoutesUrlParametersSchema = z.strictObject({
-    "user-id": z.tuple([z.string()]),
-});
-export const addRoutesPostDataSchema = z.array(routeSchema);
-export const removeRoutesParametersSchema = getRoutesUrlParametersSchema;
-export const syncRoutesParametersSchema = getRoutesUrlParametersSchema;
-export const syncRoutesPostDataSchema = addRoutesPostDataSchema;
-
 const errorResponseSchema = z.strictObject({
     type: z.literal("error"),
     name: z.string(),
@@ -53,53 +45,55 @@ export const jsonResponseSchema = z.union([
 ]);
 export type JsonResponse = z.infer<typeof jsonResponseSchema>;
 
-type ParametersSchemaKind = Schema<Record<string, string[]>>;
+type ParameterSchemaKind = Schema<Record<string, string>>;
 export interface GetApiSchema {
-    method: "GET";
     path: string;
-    parameters: ParametersSchemaKind;
+    parameter: ParameterSchemaKind;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     result: Schema<any>;
 }
-interface PostApiSchema {
-    method: "POST";
-    path: string;
-    parameters: ParametersSchemaKind;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    postData: Schema<any>;
-}
-export type ApiSchema = GetApiSchema | PostApiSchema;
+export type ApiSchema = GetApiSchema;
 
 export const interfaces = {
     getRoutes: {
-        method: "GET",
         path: "get-routes",
-        parameters: getRoutesUrlParametersSchema,
+        parameter: z.strictObject({
+            "user-id": z.string(),
+        }),
         result: z.array(routeSchema),
     },
-    addRoutes: {
-        method: "POST",
-        path: "add-routes",
-        parameters: z.strictObject({}),
-        postData: addRoutesPostDataSchema,
+    setRoute: {
+        path: "set-route",
+        parameter: z.strictObject({
+            type: z.literal("route"),
+            "user-id": z.string(),
+            "route-id": z.string(),
+            "route-name": z.string(),
+            description: z.string(),
+            note: z.string(),
+            coordinates: z.string(),
+        }),
+        result: z.null(),
     },
-    removeRoutes: {
-        method: "POST",
-        path: "remove-routes",
-        parameters: removeRoutesParametersSchema,
-        postData: z.never(),
+    deleteRoute: {
+        path: "delete-route",
+        parameter: z.strictObject({
+            "route-id": z.string(),
+        }),
+        result: z.null(),
     },
-    syncRoutes: {
-        method: "POST",
-        path: "sync-routes",
-        parameters: syncRoutesParametersSchema,
-        postData: syncRoutesPostDataSchema,
+    clearRoutes: {
+        path: "clear-routes",
+        parameter: z.strictObject({
+            "user-id": z.string(),
+        }),
+        result: z.null(),
     },
 } as const satisfies Record<string, ApiSchema>;
 
 export const requestPathSchema = z.union([
     z.literal(interfaces.getRoutes.path),
-    z.literal(interfaces.addRoutes.path),
-    z.literal(interfaces.removeRoutes.path),
-    z.literal(interfaces.syncRoutes.path),
+    z.literal(interfaces.setRoute.path),
+    z.literal(interfaces.deleteRoute.path),
+    z.literal(interfaces.clearRoutes.path),
 ]);

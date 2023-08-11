@@ -2,14 +2,10 @@ import {
     ErrorResponse,
     Route,
     RouteRow,
-    addRoutesPostDataSchema,
-    getRoutesUrlParametersSchema,
-    removeRoutesParametersSchema,
     requestPathSchema,
     routeDataSchema,
     routeRowSchema,
-    syncRoutesParametersSchema,
-    syncRoutesPostDataSchema,
+    interfaces,
 } from "./schemas";
 
 type Primitive = undefined | null | boolean | number | string | bigint;
@@ -97,79 +93,88 @@ const getRoutes = (global["getRoutes"] = function (userId: string): Route[] {
     }
     return result;
 });
-const addRoutes = (global["addRoutes"] = function (routes: readonly Route[]) {
-    const sheet = openRoutesSpreadsheet();
 
-    for (const route of routes) {
-        const row = [
-            route.type,
-            route.userId,
-            route.routeId,
-            route.routeName,
-            route.description,
-            route.note,
-            JSON.stringify(route.data),
-            route.coordinates,
-        ] satisfies RouteRow;
-        sheet.appendRow(row);
-    }
-    return null;
-});
-const removeRoutes = (global["removeRoutes"] = function (userId: string) {
+function deleteRowsBy(filter: (row: unknown[]) => boolean) {
     const sheet = openRoutesSpreadsheet();
     const lastColumn = sheet.getLastColumn();
     for (let i = sheet.getLastRow(); i !== 0; i--) {
         const rowRange = sheet.getRange(i, 1, 1, lastColumn);
         const row = rowRange.getValues()[0] ?? error`internal error`;
-        if (row[0] === "route" && row[1] === userId) {
+        if (filter(row)) {
             rowRange.deleteCells(SpreadsheetApp.Dimension.ROWS);
         }
     }
+}
+const deleteRoute = (global["deleteRoute"] = function (routeId: string) {
+    deleteRowsBy(([type, , id]) => type === "route" && id === routeId);
     return null;
 });
-const syncRoutes = (global["syncRoutes"] = function (
-    userId: string,
-    routes: readonly Route[],
-) {
-    removeRoutes(userId);
-    return addRoutes(routes);
+const clearRoutes = (global["deleteRoutes"] = function (userId: string) {
+    deleteRowsBy(([type, id]) => type === "route" && id === userId);
+    return null;
+});
+const setRoute = (global["setRoute"] = function (route: Route) {
+    deleteRoute(route.routeId);
+
+    const sheet = openRoutesSpreadsheet();
+    const row = [
+        route.type,
+        route.userId,
+        route.routeId,
+        route.routeName,
+        route.description,
+        route.note,
+        JSON.stringify(route.data),
+        route.coordinates,
+    ] satisfies RouteRow;
+    sheet.appendRow(row);
+    return null;
 });
 
 function dispatchRequest(
     path: string,
-    parameters: GoogleAppsScript.RequestEvent["parameters"],
-    postDataType: string | null,
-    postDataContents: string,
+    parameter: GoogleAppsScript.RequestEvent["parameter"],
 ) {
     try {
         const functionName = requestPathSchema.parse(path);
         switch (functionName) {
             case "get-routes": {
-                const {
-                    "user-id": [userId],
-                } = getRoutesUrlParametersSchema.parse(parameters);
+                const { "user-id": userId } =
+                    interfaces.getRoutes.parameter.parse(parameter);
                 return okResponse(getRoutes(userId));
             }
-            case "add-routes": {
-                const routes = addRoutesPostDataSchema.parse(
-                    JSON.parse(postDataContents),
-                );
-                return okResponse(addRoutes(routes));
-            }
-            case "remove-routes": {
+            case "set-route": {
                 const {
-                    "user-id": [userId],
-                } = removeRoutesParametersSchema.parse(parameters);
-                return okResponse(removeRoutes(userId));
-            }
-            case "sync-routes": {
-                const {
-                    "user-id": [userId],
-                } = syncRoutesParametersSchema.parse(parameters);
-                const routes = syncRoutesPostDataSchema.parse(
-                    JSON.parse(postDataContents),
+                    type,
+                    "user-id": userId,
+                    "route-id": routeId,
+                    "route-name": routeName,
+                    description,
+                    note,
+                    coordinates,
+                } = interfaces.setRoute.parameter.parse(parameter);
+                return okResponse(
+                    setRoute({
+                        type,
+                        userId,
+                        routeId,
+                        routeName,
+                        description,
+                        note,
+                        coordinates,
+                        data: {},
+                    }),
                 );
-                return okResponse(syncRoutes(userId, routes));
+            }
+            case "delete-route": {
+                const { "route-id": routeId } =
+                    interfaces.deleteRoute.parameter.parse(parameter);
+                return okResponse(deleteRoute(routeId));
+            }
+            case "clear-routes": {
+                const { "user-id": userId } =
+                    interfaces.clearRoutes.parameter.parse(parameter);
+                return okResponse(clearRoutes(userId));
             }
             default: {
                 throw new Error(
@@ -186,22 +191,20 @@ function doRequest(type: "GET" | "POST", e: GoogleAppsScript.RequestEvent) {
     Logger.log(`${type} request: ${JSON.stringify(e)}`);
     const result = dispatchRequest(
         e.pathInfo ?? "",
-        e.parameters,
-        e.postData?.type ?? null,
-        e.postData?.contents ?? "",
+        e.parameter,
     ) satisfies JsonResponse;
 
     let response = JSON.stringify(result);
+    let mimeType = ContentService.MimeType.JSON;
     const callbackName = e.parameters["jsonp-callback"]?.[0];
     if (callbackName != null) {
         // TODO: \u2028, \u2029 の問題
         response = `globalThis[${JSON.stringify(callbackName)}](${response})`;
+        mimeType = ContentService.MimeType.JAVASCRIPT;
     }
 
     Logger.log(`${type} response: ${response}`);
-    return ContentService.createTextOutput(response).setMimeType(
-        ContentService.MimeType.JSON,
-    );
+    return ContentService.createTextOutput(response).setMimeType(mimeType);
 }
 global["doGet"] = ((e) =>
     doRequest("GET", e)) satisfies GoogleAppsScript.RequestHandler;
@@ -227,8 +230,8 @@ global["sandbox"] = function () {
             data: {},
         };
     }
-    removeRoutes("user789012");
-    addRoutes([
+    clearRoutes("user789012");
+    const routes = [
         route(
             "user789012",
             "route789012",
@@ -265,5 +268,8 @@ global["sandbox"] = function () {
             "カイロのピラミッドからスフィンクスまで",
             "29.9792,31.1342,29.9753,31.1376",
         ),
-    ]);
+    ];
+    for (const route of routes) {
+        setRoute(route);
+    }
 };

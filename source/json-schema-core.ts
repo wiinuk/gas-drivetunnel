@@ -250,6 +250,17 @@ export function union<const TSchemas extends readonly SchemaKind[]>(
         }
     });
 }
+let nullSchemaCache: Schema<null> | undefined;
+function null_() {
+    return (nullSchemaCache ??= wrap((target, path) => {
+        if (target === null) {
+            return target;
+        }
+        throw validationError(path, "null", typeof target);
+    }));
+}
+export { null_ as null };
+
 let neverSchemaCache: Schema<never> | undefined;
 export function never() {
     return (neverSchemaCache ??= wrap((target, path) => {
