@@ -16,12 +16,26 @@ const config = {
     output: {
         path: path.join(__dirname, "dist"),
         filename: "[name].js",
+        environment: {
+            arrowFunction: false,
+        },
     },
     resolve: {
         extensions: [".js", ".json", ".ts"],
     },
     module: {
         rules: [
+            {
+                test: /\.[mc]?js$/,
+                use: [
+                    {
+                        loader: "babel-loader",
+                        options: {
+                            presets: ["@babel/preset-env"],
+                        },
+                    },
+                ],
+            },
             {
                 test: /\.ts$/,
                 loader: "ts-loader",
