@@ -48,7 +48,7 @@ declare namespace GoogleAppsScript {
          * @example `332`
          */
         readonly contentLength: number;
-        readonly postData: PostData;
+        readonly postData?: PostData;
     }
     type RequestHandler = (
         e: RequestEvent,
