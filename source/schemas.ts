@@ -1,8 +1,15 @@
 import { z } from "./json-schema";
 import { Schema } from "./json-schema-core";
 
+const iso8601DateTimeSchema = z.regexp(
+    /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[-+]\d{2}:\d{2})?/,
+);
+const googleSpreadsheetDateTimeSchema = z.regexp(
+    /\d+([-/])\d+\1\d+(?:\s+\d+:\d+:\d+(?:\.\d+)?)?/,
+);
+
 export const routeDataSchema = z.strictObject({});
-export const routeSchema = z.strictObject({
+const routePropertySchemas = {
     type: z.literal("route"),
     userId: z.string(),
     routeId: z.string(),
@@ -11,7 +18,13 @@ export const routeSchema = z.strictObject({
     note: z.string(),
     data: routeDataSchema,
     coordinates: z.string(),
+};
+const serverRouteSchema = z.strictObject({
+    ...routePropertySchemas,
+    updatedAt: iso8601DateTimeSchema,
 });
+export type ServerRoute = z.infer<typeof serverRouteSchema>;
+export const routeSchema = z.strictObject(routePropertySchemas);
 export type Route = z.infer<typeof routeSchema>;
 
 export const routeRowSchema = z.tuple([
@@ -23,6 +36,7 @@ export const routeRowSchema = z.tuple([
     z.string(),
     z.string(),
     z.string(),
+    googleSpreadsheetDateTimeSchema,
 ]);
 export type RouteRow = z.infer<typeof routeRowSchema>;
 
@@ -60,7 +74,9 @@ export const interfaces = {
         parameter: z.strictObject({
             "user-id": z.string(),
         }),
-        result: z.array(routeSchema),
+        result: z.strictObject({
+            routes: z.array(serverRouteSchema),
+        }),
     },
     setRoute: {
         path: "set-route",
@@ -73,21 +89,30 @@ export const interfaces = {
             note: z.string(),
             coordinates: z.string(),
         }),
-        result: z.null(),
+        result: z.strictObject({
+            /** ISO8601 */
+            updatedAt: iso8601DateTimeSchema,
+        }),
     },
     deleteRoute: {
         path: "delete-route",
         parameter: z.strictObject({
             "route-id": z.string(),
         }),
-        result: z.null(),
+        result: z.strictObject({
+            /** ISO8601 */
+            updatedAt: iso8601DateTimeSchema,
+        }),
     },
     clearRoutes: {
         path: "clear-routes",
         parameter: z.strictObject({
             "user-id": z.string(),
         }),
-        result: z.null(),
+        result: z.strictObject({
+            /** ISO8601 */
+            updatedAt: iso8601DateTimeSchema,
+        }),
     },
 } as const satisfies Record<string, ApiSchema>;
 

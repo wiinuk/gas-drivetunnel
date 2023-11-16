@@ -158,6 +158,16 @@ export function string() {
     }));
 }
 
+let numberSchema: Schema<number> | undefined;
+export function number() {
+    return (numberSchema ??= wrap((target, path) => {
+        if (typeof target !== "number") {
+            throw validationError(path, "number", typeof target);
+        }
+        return target as number;
+    }));
+}
+
 type SchemasToTuple<T extends readonly SchemaKind[]> = {
     -readonly [i in keyof T]: Infer<T[i]>;
 };
@@ -269,11 +279,21 @@ export function never() {
 }
 let anySchemaCache: Schema<unknown> | undefined;
 export function any() {
-    return (anySchemaCache ??= wrap((target) => {
-        return target;
-    }));
+    return (anySchemaCache ??= wrap((target) => target));
 }
 
 function optional<T>(schema: Schema<T>) {
     return new Schema<T, { isOptional: true }>(schema._validate, true);
+}
+
+export function regexp(pattern: RegExp) {
+    return wrap((target, path) => {
+        if (typeof target !== "string") {
+            throw validationError(path, "string", typeof target);
+        }
+        if (!pattern.test(target)) {
+            throw validationError(path, pattern.toString(), target);
+        }
+        return target;
+    });
 }
