@@ -4,9 +4,6 @@ import { Schema } from "./json-schema-core";
 const iso8601DateTimeSchema = z.regexp(
     /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[-+]\d{2}:\d{2})?/,
 );
-const googleSpreadsheetDateTimeSchema = z.regexp(
-    /\d+([-/])\d+\1\d+(?:\s+\d+:\d+:\d+(?:\.\d+)?)?/,
-);
 
 export const routeDataSchema = z.strictObject({});
 const routePropertySchemas = {
@@ -27,7 +24,7 @@ export type ServerRoute = z.infer<typeof serverRouteSchema>;
 export const routeSchema = z.strictObject(routePropertySchemas);
 export type Route = z.infer<typeof routeSchema>;
 
-export const routeRowSchema = z.tuple([
+const routeColumns = [
     z.literal("route"),
     z.string(),
     z.string(),
@@ -36,9 +33,13 @@ export const routeRowSchema = z.tuple([
     z.string(),
     z.string(),
     z.string(),
-    googleSpreadsheetDateTimeSchema,
-]);
+    z.date(),
+] as const;
+export const routeRowSchema = z.tuple(routeColumns);
 export type RouteRow = z.infer<typeof routeRowSchema>;
+
+export const queryRowSchema = z.tuple([z.number(), ...routeColumns]);
+export type QueryRow = z.infer<typeof queryRowSchema>;
 
 const errorResponseSchema = z.strictObject({
     type: z.literal("error"),

@@ -1,3 +1,5 @@
+// spell-checker: ignore datetime ARRAYFORMULA
+import { expect } from "./assertion";
 import { z } from "./json-schema";
 import {
     ErrorResponse,
@@ -5,68 +7,49 @@ import {
     RouteRow,
     requestPathSchema,
     routeDataSchema,
-    routeRowSchema,
     interfaces,
     ServerRoute,
+    queryRowSchema,
 } from "./schemas";
+import { Json } from "./standard-extensions";
 
-type Primitive = undefined | null | boolean | number | string | bigint;
-type Json =
-    | Exclude<Primitive, undefined>
-    | readonly Json[]
-    | { readonly [key: string]: Json };
-function error(template: TemplateStringsArray, ...args: Primitive[]): never {
-    let message = template[0];
-    for (let i = 1; i < template.length; i++) {
-        message += String(args[i - 1]);
-        message += template[i]!;
-    }
-    throw new Error(message);
-}
-
-const spreadsheetDateTimePattern =
-    /^(\d+)([-/])(\d+)\2(\d+)(?:\s+(\d+):(\d+):(\d+)(?:\.(\d+))?)?$/;
-function sheetUTCDateStringToDate(sheetDate: string) {
-    const match = spreadsheetDateTimePattern.exec(sheetDate);
-    if (match == null) {
-        return;
-    }
-
-    const [
-        ,
-        year = error`internal error`,
-        ,
-        month = error`internal error`,
-        day = error`internal error`,
-        hours,
-        minutes,
-        seconds,
-        milliseconds,
-    ] = match;
-    const date = new Date(0);
-    date.setUTCFullYear(Number(year));
-    date.setUTCMonth(Number(month) - 1);
-    date.setUTCDate(Number(day));
-    if (hours != null) {
-        date.setUTCHours(Number(hours));
-        date.setUTCMinutes(Number(minutes));
-        date.setUTCSeconds(Number(seconds));
-    }
-    if (milliseconds != null) {
-        date.setUTCMilliseconds(Number(milliseconds));
-    }
-    return date;
-}
-function parseSheetUTCDateToISO8601Date(sheetDate: string) {
-    return (
-        sheetUTCDateStringToDate(sheetDate)?.toISOString() ??
-        error`invalid date format "${sheetDate}"`
-    );
-}
-function dateToSheetUTCDate(date: Date) {
+function dateToSqlUTCDateTime(date: Date) {
     return `${date.getUTCFullYear()}-${
         date.getUTCMonth() + 1
     }-${date.getUTCDate()} ${date.getUTCHours()}:${date.getUTCMinutes()}:${date.getUTCSeconds()}.${date.getUTCMilliseconds()}`;
+}
+function toSheetStringLiteral(value: string) {
+    return `"${value.replace(/"/g, '""')}"`;
+}
+function toSheetSheetNameLiteral(value: string) {
+    return `'${value.replace(/'/g, "''")}'`;
+}
+function toSqlStringLiteral(value: string) {
+    return `'${value.replace(/'/g, "''")}'`;
+}
+function buildTemplate(
+    template: TemplateStringsArray,
+    parameters: readonly string[],
+) {
+    let result = template[0]!;
+    for (let i = 0; i < parameters.length; i++) {
+        result += parameters[i]! + template[i + 1]!;
+    }
+    return result;
+}
+/**
+ * SQL クエリ式に文字列リテラルとしてパラメータを埋め込む
+ * @example ```js
+ * spl`datetime ${new Date()}` === "datetime '2000-01-01 00:00:00'"
+ * ```
+ */
+function sql(template: TemplateStringsArray, ...parameters: (string | Date)[]) {
+    return buildTemplate(
+        template,
+        parameters.map((p) =>
+            toSqlStringLiteral(p instanceof Date ? dateToSqlUTCDateTime(p) : p),
+        ),
+    );
 }
 
 type OkResponse<T extends Json> = {
@@ -93,87 +76,121 @@ function errorResponse(error: unknown): ErrorResponse {
     }
 }
 
-function createStore(fileName: string, sheetName: string) {
+function createStore(
+    fileName: string,
+    resultSheetName: string,
+    querySheetName: string,
+) {
     function openRoutesSpreadsheet() {
         const spreadsheetFile = DriveApp.getRootFolder()
             .getFilesByName(fileName)
             .next();
 
         const spreadsheet = SpreadsheetApp.open(spreadsheetFile);
-        return (
-            spreadsheet.getSheetByName(sheetName) ??
-            spreadsheet.insertSheet(sheetName)
-        );
+        const routesSheet =
+            spreadsheet.getSheetByName(resultSheetName) ??
+            spreadsheet.insertSheet(resultSheetName);
+        const querySheet =
+            spreadsheet.getSheetByName(querySheetName) ??
+            spreadsheet.insertSheet(querySheetName);
+        return {
+            routesSheet,
+            querySheet,
+        };
     }
-    function getRoutes(userId: string) {
-        const routes: ServerRoute[] = [];
-        const sheet = openRoutesSpreadsheet();
-        if (!(1 <= sheet.getLastRow())) {
-            return { routes };
-        }
-        const rows = sheet.getSheetValues(
-            1,
-            1,
-            sheet.getLastRow(),
-            sheet.getLastColumn(),
-        );
-        for (const row of rows) {
-            if (row[0] === "route" && row[1] === userId) {
-                const [
-                    type,
-                    rowUserId,
-                    routeId,
-                    routeName,
-                    description,
-                    note,
-                    data,
-                    coordinates,
-                    updatedAt,
-                ] = routeRowSchema.parse(row);
+    function evaluateRoutesQuery(query: string) {
+        const { routesSheet, querySheet } = openRoutesSpreadsheet();
+        const routeSheetName = routesSheet.getName();
+        querySheet
+            .getRange(1, 1)
+            .setValue(
+                `=QUERY({ARRAYFORMULA(ROW(${toSheetSheetNameLiteral(
+                    routeSheetName,
+                )}!A:Z)), ${toSheetSheetNameLiteral(
+                    routeSheetName,
+                )}!A:Z}, ${toSheetStringLiteral(query)})`,
+            );
 
-                routes.push({
-                    type,
-                    userId: rowUserId,
-                    routeId,
-                    routeName,
-                    description,
-                    note,
-                    data: routeDataSchema.parse(JSON.parse(data)),
-                    coordinates,
-                    updatedAt: parseSheetUTCDateToISO8601Date(updatedAt),
-                });
-            }
+        let results: unknown[][];
+        if (querySheet.getRange(1, 1).getDisplayValue() === "#N/A") {
+            results = [];
+        } else {
+            results = querySheet.getSheetValues(
+                1,
+                1,
+                querySheet.getLastRow(),
+                querySheet.getLastColumn(),
+            );
+        }
+        querySheet.getRange(1, 1).clearContent();
+        return { routesSheet, querySheet, results };
+    }
+    function getRoutes(userId: string, since?: Date) {
+        since ??= new Date(0);
+        const routes: ServerRoute[] = [];
+        const { results } = evaluateRoutesQuery(
+            sql`select * where Col2 = 'route' and Col3 = ${userId} and Col10 >= datetime ${since} order by Col10`,
+        );
+        for (const row of results) {
+            const [
+                ,
+                type,
+                rowUserId,
+                routeId,
+                routeName,
+                description,
+                note,
+                data,
+                coordinates,
+                updatedAt,
+            ] = queryRowSchema.parse(row);
+            routes.push({
+                type,
+                userId: rowUserId,
+                routeId,
+                routeName,
+                description,
+                note,
+                data: routeDataSchema.parse(JSON.parse(data)),
+                coordinates,
+                updatedAt: updatedAt.toISOString(),
+            });
         }
         return { routes };
     }
+    function deleteRowsByQuery(query: string) {
+        const { routesSheet, results } = evaluateRoutesQuery(query);
+        const sortedRowNumbers = results
+            .map((r) => queryRowSchema.parse(r)[0])
+            .sort((a, b) => b - a);
 
-    function deleteRowsBy(filter: (row: unknown[]) => boolean) {
-        const sheet = openRoutesSpreadsheet();
-        const lastColumn = sheet.getLastColumn();
-        for (let i = sheet.getLastRow(); i !== 0; i--) {
-            const rowRange = sheet.getRange(i, 1, 1, lastColumn);
-            const row = rowRange.getValues()[0] ?? error`internal error`;
-            if (filter(row)) {
-                rowRange.deleteCells(SpreadsheetApp.Dimension.ROWS);
-            }
+        const lastColumn = routesSheet.getLastColumn();
+        for (const rowNumber of sortedRowNumbers) {
+            routesSheet
+                .getRange(rowNumber, 1, 1, lastColumn)
+                .deleteCells(SpreadsheetApp.Dimension.ROWS);
         }
     }
     function deleteRoute(routeId: string) {
-        deleteRowsBy(([type, , id]) => type === "route" && id === routeId);
+        deleteRowsByQuery(
+            sql`select * where Col2 = 'route' and Col4 = ${routeId}`,
+        );
         return {
-            updatedAt: new Date(Date.now()).toDateString(),
+            updatedAt: new Date(Date.now()).toISOString(),
         };
     }
     function clearRoutes(userId: string) {
-        deleteRowsBy(([type, id]) => type === "route" && id === userId);
+        deleteRowsByQuery(
+            sql`select * where Col2 = 'route' and Col3 = ${userId}`,
+        );
         return {
-            updatedAt: new Date(Date.now()).toDateString(),
+            updatedAt: new Date(Date.now()).toISOString(),
         };
     }
     function setRoute(route: Route) {
         deleteRoute(route.routeId);
 
-        const sheet = openRoutesSpreadsheet();
+        const { routesSheet } = openRoutesSpreadsheet();
         const now = new Date(Date.now());
         const row = [
             route.type,
@@ -184,12 +201,12 @@ function createStore(fileName: string, sheetName: string) {
             route.note,
             JSON.stringify(route.data),
             route.coordinates,
-            dateToSheetUTCDate(now),
+            now,
         ] satisfies RouteRow;
-        sheet.appendRow(row);
+        routesSheet.appendRow(row);
 
         return {
-            updatedAt: now.toDateString(),
+            updatedAt: now.toISOString(),
         };
     }
     return {
@@ -204,7 +221,7 @@ type ApiResult<name extends keyof typeof interfaces> = z.infer<
     (typeof interfaces)[name]["result"]
 >;
 
-const defaultStore = createStore("Routes", "routes");
+const defaultStore = createStore("Routes", "routes", "_query_result");
 function dispatchRequest(
     path: string,
     parameter: GoogleAppsScript.RequestEvent["parameter"],
@@ -298,8 +315,7 @@ global["doGet"] = ((e) =>
 global["doPost"] = ((e) =>
     doRequest("POST", e)) satisfies GoogleAppsScript.RequestHandler;
 
-global["sandbox"] = function sandbox() {
-    const store = createStore("Routes", "_test_routes");
+function testStore(store: typeof defaultStore) {
     function route(
         userId: string,
         routeId: string,
@@ -317,46 +333,55 @@ global["sandbox"] = function sandbox() {
             data: {},
         };
     }
-    store.clearRoutes("user789012");
-    const routes = [
-        route(
-            "user789012",
-            "route789012",
-            "京都駅から清水寺まで",
-            "34.9855,135.7586,34.9949,135.7850",
-        ),
-        route(
-            "user345678",
-            "route345678",
-            "ニューヨークのセントラルパークを一周する",
-            "40.7681,-73.9819,40.7829,-73.9654,40.7968,-73.9493,40.7819,-73.9345,40.7671,-73.9490",
-        ),
-        route(
-            "user901234",
-            "route901234",
-            "パリのエッフェル塔からルーブル美術館まで",
-            "48.8584,2.2945,48.8606,2.3376",
-        ),
-        route(
-            "user345678",
-            "route567890",
-            "ロンドンのビッグベンからタワーブリッジまで",
-            "51.5007,-0.1246,51.5055,-0.0754",
-        ),
-        route(
-            "user789012",
-            "route234567",
-            "シドニーのオペラハウスからハーバーブリッジまで",
-            "-33.8568,151.2153,-33.8523,151.2108",
-        ),
-        route(
-            "user678901",
-            "route678901",
-            "カイロのピラミッドからスフィンクスまで",
-            "29.9792,31.1342,29.9753,31.1376",
-        ),
-    ];
-    for (const route of routes) {
-        store.setRoute(route);
+    const coordinates = "48.8584,2.2945,48.8606,2.3376";
+    const userId = "user345678";
+    const { updatedAt: dateA } = store.setRoute(
+        route(userId, "routeA000000", "routeA", coordinates),
+    );
+    const { updatedAt: _ateB } = store.setRoute(
+        route(userId, "routeA000001", "routeB", coordinates),
+    );
+    const { updatedAt: dateC } = store.setRoute(
+        route(userId, "routeA000002", "routeC", coordinates),
+    );
+    const { updatedAt: dateB2 } = store.setRoute(
+        route(userId, "routeA000001", "routeB2", coordinates),
+    );
+
+    const routeNames = store
+        .getRoutes(userId)
+        .routes.map(({ routeName, updatedAt }) => [routeName, updatedAt]);
+    expect(routeNames).toStrictEqual([
+        ["routeA", dateA],
+        ["routeC", dateC],
+        ["routeB2", dateB2],
+    ]);
+}
+global["sandbox"] = function () {
+    const testSheetFileName = "Routes";
+    const testSheetName = "_test_routes";
+    const testQuerySheetName = "_test_query_result";
+
+    function deleteTestSheets() {
+        const spreadsheetFile = DriveApp.getRootFolder()
+            .getFilesByName(testSheetFileName)
+            .next();
+
+        const sheetNames = [testSheetName, testQuerySheetName];
+        for (const sheetName of sheetNames) {
+            const spreadsheet = SpreadsheetApp.open(spreadsheetFile);
+            const sheet = spreadsheet.getSheetByName(sheetName);
+            if (sheet != null) {
+                spreadsheet.deleteSheet(sheet);
+            }
+        }
+    }
+    deleteTestSheets();
+    try {
+        testStore(
+            createStore(testSheetFileName, testSheetName, testQuerySheetName),
+        );
+    } finally {
+        deleteTestSheets();
     }
 };
