@@ -24,6 +24,7 @@
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-es-x": "^7.3.0",
     "eslint-plugin-rulesdir": "^0.2.2",
+    "esprima": "^4.0.1",
     "fork-ts-checker-webpack-plugin": "^8.0.0",
     "prettier": "^3.0.1",
     "ts-loader": "^9.4.4",

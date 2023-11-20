@@ -2,6 +2,7 @@
 const path = require("node:path");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 const WebpackShellPluginNext = require("webpack-shell-plugin-next");
+const GasDebugPlugin = require("./webpack-gas-debug-plugin");
 
 const entryPoint = path.join(__dirname, "source", "Code.ts");
 
@@ -47,6 +48,7 @@ const config = {
         ],
     },
     plugins: [
+        new GasDebugPlugin(),
         new CopyWebpackPlugin({
             patterns: [{ from: "./source/appsscript.json" }],
         }),
