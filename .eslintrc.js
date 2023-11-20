@@ -59,7 +59,12 @@ const config = {
         "es-x/no-for-of-loops": "off",
         "es-x/no-arrow-functions": "off",
         "es-x/no-rest-spread-properties": "off",
+        "es-x/no-spread-elements": "off",
         "es-x/no-classes": "off",
+        "es-x/no-class-fields": "off",
+        "es-x/no-subclassing-builtins": "off",
+        "es-x/no-logical-assignment-operators": "off",
+        "es-x/no-optional-catch-binding": "off",
     },
 };
 module.exports = config;
