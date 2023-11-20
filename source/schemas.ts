@@ -33,7 +33,7 @@ const routeColumns = [
     z.string(),
     z.string(),
     z.string(),
-    z.date(),
+    z.number(),
 ] as const;
 export const routeRowSchema = z.tuple(routeColumns);
 export type RouteRow = z.infer<typeof routeRowSchema>;
@@ -74,6 +74,7 @@ export const interfaces = {
         path: "get-routes",
         parameter: z.strictObject({
             "user-id": z.string(),
+            since: iso8601DateTimeSchema.optional(),
         }),
         result: z.strictObject({
             routes: z.array(serverRouteSchema),

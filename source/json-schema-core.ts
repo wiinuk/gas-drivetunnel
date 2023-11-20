@@ -297,11 +297,3 @@ export function regexp(pattern: RegExp) {
         return target;
     });
 }
-export function date() {
-    return wrap((target, path) => {
-        if (!(target instanceof Date)) {
-            throw validationError(path, "Date", typeof target);
-        }
-        return target;
-    });
-}

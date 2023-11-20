@@ -40,15 +40,22 @@ function buildTemplate(
 /**
  * SQL クエリ式に文字列リテラルとしてパラメータを埋め込む
  * @example ```js
- * spl`datetime ${new Date()}` === "datetime '2000-01-01 00:00:00'"
+ * spl`${new Date(0)}` === "datetime '1970-01-01 00:00:00'"
  * ```
  */
-function sql(template: TemplateStringsArray, ...parameters: (string | Date)[]) {
+function sql(
+    template: TemplateStringsArray,
+    ...parameters: (string | Date | number)[]
+) {
     return buildTemplate(
         template,
-        parameters.map((p) =>
-            toSqlStringLiteral(p instanceof Date ? dateToSqlUTCDateTime(p) : p),
-        ),
+        parameters.map((p) => {
+            return typeof p === "string"
+                ? toSqlStringLiteral(p)
+                : typeof p === "number"
+                ? String(p)
+                : `datetime ${toSqlStringLiteral(dateToSqlUTCDateTime(p))}`;
+        }),
     );
 }
 
@@ -129,7 +136,7 @@ function createStore(
         since ??= new Date(0);
         const routes: ServerRoute[] = [];
         const { results } = evaluateRoutesQuery(
-            sql`select * where Col2 = 'route' and Col3 = ${userId} and Col10 >= datetime ${since} order by Col10`,
+            sql`select * where Col2 = 'route' and Col3 = ${userId} and Col10 > ${since.getTime()} order by Col10`,
         );
         for (const row of results) {
             const [
@@ -142,7 +149,7 @@ function createStore(
                 note,
                 data,
                 coordinates,
-                updatedAt,
+                updatedAtTime,
             ] = queryRowSchema.parse(row);
             routes.push({
                 type,
@@ -153,7 +160,7 @@ function createStore(
                 note,
                 data: routeDataSchema.parse(JSON.parse(data)),
                 coordinates,
-                updatedAt: updatedAt.toISOString(),
+                updatedAt: new Date(updatedAtTime).toISOString(),
             });
         }
         return { routes };
@@ -201,7 +208,7 @@ function createStore(
             route.note,
             JSON.stringify(route.data),
             route.coordinates,
-            now,
+            now.getTime(),
         ] satisfies RouteRow;
         routesSheet.appendRow(row);
 
@@ -230,11 +237,12 @@ function dispatchRequest(
         const functionName = requestPathSchema.parse(path);
         switch (functionName) {
             case "get-routes": {
-                const { "user-id": userId } =
+                const { "user-id": userId, since } =
                     interfaces.getRoutes.parameter.parse(parameter);
                 return okResponse(
                     defaultStore.getRoutes(
                         userId,
+                        since != null ? new Date(since) : since,
                     ) satisfies ApiResult<"getRoutes">,
                 );
             }
@@ -338,7 +346,7 @@ function testStore(store: typeof defaultStore) {
     const { updatedAt: dateA } = store.setRoute(
         route(userId, "routeA000000", "routeA", coordinates),
     );
-    const { updatedAt: _ateB } = store.setRoute(
+    const { updatedAt: dateB } = store.setRoute(
         route(userId, "routeA000001", "routeB", coordinates),
     );
     const { updatedAt: dateC } = store.setRoute(
@@ -356,6 +364,21 @@ function testStore(store: typeof defaultStore) {
         ["routeC", dateC],
         ["routeB2", dateB2],
     ]);
+
+    const routes1 = store
+        .getRoutes(userId, new Date(dateA))
+        .routes.map((r) => r.routeName);
+    expect(routes1).toStrictEqual(["routeC", "routeB2"]);
+
+    const routes2 = store
+        .getRoutes(userId, new Date(dateB))
+        .routes.map((r) => r.routeName);
+    expect(routes2).toStrictEqual(["routeC", "routeB2"]);
+
+    const routes3 = store
+        .getRoutes(userId, new Date(dateC))
+        .routes.map((r) => r.routeName);
+    expect(routes3).toStrictEqual(["routeB2"]);
 }
 global["sandbox"] = function () {
     const testSheetFileName = "Routes";
