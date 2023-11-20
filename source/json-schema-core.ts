@@ -289,10 +289,18 @@ function optional<T>(schema: Schema<T>) {
 export function regexp(pattern: RegExp) {
     return wrap((target, path) => {
         if (typeof target !== "string") {
-            throw validationError(path, "string", typeof target);
+            throw validationError(path, pattern.toString(), typeof target);
         }
         if (!pattern.test(target)) {
             throw validationError(path, pattern.toString(), target);
+        }
+        return target;
+    });
+}
+export function date() {
+    return wrap((target, path) => {
+        if (!(target instanceof Date)) {
+            throw validationError(path, "Date", typeof target);
         }
         return target;
     });
