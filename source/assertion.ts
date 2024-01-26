@@ -5,6 +5,14 @@ class AssertionError extends Error {
     }
 }
 type ObjectPath = readonly (number | string)[];
+
+function stringify(value: unknown) {
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
 function throwAssertionError(
     path: ObjectPath,
     actual: unknown,
@@ -13,9 +21,11 @@ function throwAssertionError(
     expectedAll: unknown,
 ): never {
     throw new AssertionError(
-        `actual: ${actualAll}, expected: ${expectedAll}, in path: ${JSON.stringify(
-            path,
-        )} expected: ${expected}, actual: ${actual}`,
+        `actual: ${stringify(actualAll)}, expected: ${stringify(
+            expectedAll,
+        )}, in path: ${JSON.stringify(path)} expected: ${stringify(
+            expected,
+        )}, actual: ${stringify(actual)}`,
     );
 }
 
@@ -123,8 +133,8 @@ function assertStrictEqualCore(
             if (actual.length !== expected.length) {
                 return throwAssertionError(
                     [...path, "length"],
-                    actual,
-                    expected,
+                    actual.length,
+                    expected.length,
                     actualAll,
                     expectedAll,
                 );

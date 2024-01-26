@@ -34,5 +34,10 @@
         "source.fixAll.eslint": true
       },
       "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascript][javascriptreact][typescript][typescriptreact]": {
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit"
+      }
     }
 }

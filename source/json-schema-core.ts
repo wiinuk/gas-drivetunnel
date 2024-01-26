@@ -79,6 +79,37 @@ function validationError(path: Path, expected: string, actual: string) {
     );
 }
 
+export function record<K extends string, V>(
+    keySchema: Schema<K>,
+    valueSchema: Schema<V>,
+) {
+    return wrap((target, path, seen) => {
+        if (target == null || typeof target !== "object") {
+            throw validationError(
+                path,
+                "object",
+                target === null ? "null" : typeof target,
+            );
+        }
+        if (seen.has(target)) {
+            return target as Partial<Record<K, V>>;
+        }
+        seen.add(target);
+
+        for (const key of Object.keys(target)) {
+            const value = target[key as keyof typeof target];
+            keySchema.parse(key);
+            try {
+                path.push(key);
+                valueSchema._validate(value, path, seen);
+            } finally {
+                path.pop();
+            }
+        }
+        return target as Partial<Record<K, V>>;
+    });
+}
+
 type ShapeToObject<TShape extends Readonly<Record<string, SchemaKind>>> = {
     -readonly [k in keyof TShape as GetSchemaParameter<
         TShape[k]
@@ -106,7 +137,11 @@ export function strictObject<
     }
     return wrap((target, path, seen) => {
         if (target === null || typeof target !== "object") {
-            throw validationError(path, "object", typeof target);
+            throw validationError(
+                path,
+                "object",
+                target === null ? "null" : typeof target,
+            );
         }
         if (seen.has(target)) {
             return target as ShapeToObject<TShape>;
@@ -165,6 +200,15 @@ export function number() {
             throw validationError(path, "number", typeof target);
         }
         return target as number;
+    }));
+}
+let booleanSchema: Schema<boolean> | undefined;
+export function boolean() {
+    return (booleanSchema ??= wrap((target, path) => {
+        if (typeof target === "boolean") {
+            throw validationError(path, "boolean", typeof target);
+        }
+        return target as boolean;
     }));
 }
 
@@ -296,4 +340,39 @@ export function regexp(pattern: RegExp) {
         }
         return target;
     });
+}
+
+export type Json =
+    | null
+    | boolean
+    | number
+    | string
+    | Json[]
+    | { [k in string]?: Json };
+
+function createJsonSchema() {
+    const json = wrap((target, path, seen): Json => {
+        if (target === null) {
+            return target;
+        }
+        switch (typeof target) {
+            case "boolean":
+            case "number":
+            case "string":
+                return target;
+            case "object":
+                return Array.isArray(target)
+                    ? jsonArray._validate(target, path, seen)
+                    : jsonObject._validate(target, path, seen);
+        }
+        throw validationError(path, "Json", typeof target);
+    });
+    const jsonArray = array(json);
+    const jsonObject = record(string(), json);
+    return json;
+}
+
+let jsonSchemaCache: Schema<Json> | undefined;
+export function json() {
+    return (jsonSchemaCache ??= createJsonSchema());
 }

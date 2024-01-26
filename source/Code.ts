@@ -11,7 +11,7 @@ import {
     ServerRoute,
     queryRowSchema,
 } from "./schemas";
-import { Json } from "./standard-extensions";
+import Json = z.Json;
 
 function dateToSqlUTCDateTime(date: Date) {
     return `${date.getUTCFullYear()}-${
@@ -379,6 +379,13 @@ function testStore(store: typeof defaultStore) {
         .getRoutes(userId, new Date(dateC))
         .routes.map((r) => r.routeName);
     expect(routes3).toStrictEqual(["routeB2"]);
+
+    store.setRoute({
+        ...route(userId, "spotD", "spotD", coordinates),
+        data: { kind: "spot" },
+    });
+    const routes4 = store.getRoutes(userId).routes.map((r) => r.data);
+    expect(routes4).toStrictEqual([{}, {}, {}, { kind: "spot" }]);
 }
 global["sandbox"] = function () {
     const testSheetFileName = "Routes";
