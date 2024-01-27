@@ -90,6 +90,7 @@ export const interfaces = {
             description: z.string(),
             note: z.string(),
             coordinates: z.string(),
+            data: z.string(),
         }),
         result: z.strictObject({
             /** ISO8601 */
