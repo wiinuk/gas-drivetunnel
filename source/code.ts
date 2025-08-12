@@ -13,42 +13,6 @@ import {
 } from "./schemas";
 import Json = z.Json;
 
-function withScriptLock<T>(process: () => T) {
-    let lock;
-    try {
-        lock = LockService.getScriptLock();
-        while (!lock.tryLock(2000));
-        return process();
-    } finally {
-        lock?.releaseLock();
-    }
-}
-function getFirstFileByName(fileName: string) {
-    const iterator = DriveApp.getFilesByName(fileName);
-    return iterator.hasNext() ? iterator.next() : undefined;
-}
-function writeLogToFile(logFileName: string) {
-    const content = Logger.getLog();
-    const mimeType = MimeType.PLAIN_TEXT;
-
-    const file = getFirstFileByName(logFileName);
-    if (file) {
-        if (file.getMimeType() === mimeType) {
-            file.setContent(content);
-            return;
-        }
-        DriveApp.removeFile(file);
-    }
-    DriveApp.createFile(logFileName, Logger.getLog(), MimeType.PLAIN_TEXT);
-}
-function withLogFile<T>(logFileName: string, process: () => T) {
-    try {
-        return process();
-    } finally {
-        writeLogToFile(logFileName);
-    }
-}
-
 function dateToSqlUTCDateTime(date: Date) {
     return `${date.getUTCFullYear()}-${
         date.getUTCMonth() + 1
@@ -144,17 +108,14 @@ function createStore(
     function evaluateRoutesQuery(query: string) {
         const { routesSheet, querySheet } = openRoutesSpreadsheet();
         const routeSheetName = routesSheet.getName();
-
-        // 日時として扱われる数値が混じるとクエリ結果が空になる時があるので、
-        // TO_PURE_NUMBER で日時として扱われない数値に変換する。
         querySheet
             .getRange(1, 1)
             .setValue(
                 `=QUERY({ARRAYFORMULA(ROW(${toSheetSheetNameLiteral(
                     routeSheetName,
-                )}!A:Z)), ARRAYFORMULA(TO_PURE_NUMBER(${toSheetSheetNameLiteral(
+                )}!A:Z)), ${toSheetSheetNameLiteral(
                     routeSheetName,
-                )}!A:Z))}, ${toSheetStringLiteral(query)})`,
+                )}!A:Z}, ${toSheetStringLiteral(query)})`,
             );
 
         let results: unknown[][];
@@ -294,7 +255,6 @@ function dispatchRequest(
                     description,
                     note,
                     coordinates,
-                    data,
                 } = interfaces.setRoute.parameter.parse(parameter);
                 return okResponse(
                     defaultStore.setRoute({
@@ -305,7 +265,7 @@ function dispatchRequest(
                         description,
                         note,
                         coordinates,
-                        data: JSON.parse(data),
+                        data: {},
                     }) satisfies ApiResult<"setRoute">,
                 );
             }
@@ -358,14 +318,10 @@ function doRequest(type: "GET" | "POST", e: GoogleAppsScript.RequestEvent) {
     return ContentService.createTextOutput(response).setMimeType(mimeType);
 }
 global["doGet"] = ((e) =>
-    withScriptLock(() =>
-        withLogFile(`gas-drive-tunnel.log`, () => doRequest("GET", e)),
-    )) satisfies GoogleAppsScript.RequestHandler;
+    doRequest("GET", e)) satisfies GoogleAppsScript.RequestHandler;
 
 global["doPost"] = ((e) =>
-    withScriptLock(() =>
-        withLogFile(`gas-drive-tunnel.log`, () => doRequest("POST", e)),
-    )) satisfies GoogleAppsScript.RequestHandler;
+    doRequest("POST", e)) satisfies GoogleAppsScript.RequestHandler;
 
 function testStore(store: typeof defaultStore) {
     function route(
@@ -432,9 +388,6 @@ function testStore(store: typeof defaultStore) {
     expect(routes4).toStrictEqual([{}, {}, {}, { kind: "spot" }]);
 }
 global["sandbox"] = function () {
-    const routes = defaultStore.getRoutes("user789012");
-    Logger.log(routes.routes.length);
-
     const testSheetFileName = "Routes";
     const testSheetName = "_test_routes";
     const testQuerySheetName = "_test_query_result";
