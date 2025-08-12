@@ -1,6 +1,6 @@
 type unreachable = never;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SchemaKind = Schema<any, SchemaParametersKind>;
+export type SchemaKind = Schema<any, SchemaParametersKind>;
 type Infer<T extends SchemaKind> = T extends Schema<infer t> ? t : unreachable;
 export type infer<T extends SchemaKind> = Infer<T>;
 
@@ -15,14 +15,14 @@ interface WeakSetLike<T extends object> {
     add(x: T): void;
     has(x: T): boolean;
 }
-type Path = (string | number)[];
+type MutablePath = (string | number)[];
 type ValidationFunction<T> = (
     target: unknown,
-    currentPath: Path,
+    currentPath: MutablePath,
     seen: WeakSetLike<object>,
 ) => T;
 
-const pathCaches: Path[] = [];
+const pathCaches: MutablePath[] = [];
 const seenCaches: WeakSetLike<object>[] = [];
 
 interface SchemaParametersKind {
@@ -58,24 +58,54 @@ export class Schema<T, TParameters extends SchemaParametersKind = {}> {
     }
 }
 
-function wrap<T>(validate: ValidationFunction<T>) {
-    return new Schema<T>(validate);
+function wrap<T, TOptions extends SchemaParametersKind>(
+    validate: ValidationFunction<T>,
+) {
+    return new Schema<T, TOptions>(validate);
 }
 class ValidationError extends Error {
-    constructor(message: string) {
+    constructor(
+        message: string,
+        readonly path: Readonly<MutablePath>,
+        readonly expected: string,
+        readonly actual: string,
+    ) {
         super(message);
     }
     override get name() {
         return "ValidationError";
     }
 }
-function validationError(path: Path, expected: string, actual: string) {
+interface ValidationDiagnostic {
+    message: string;
+    path: Readonly<MutablePath>;
+    expected: string;
+    actual: string;
+}
+export function errorAsValidationDiagnostics(
+    error: unknown,
+): ValidationDiagnostic[] | undefined {
+    if (error instanceof ValidationError) {
+        return [
+            {
+                message: error.message,
+                path: error.path,
+                expected: error.expected,
+                actual: error.actual,
+            },
+        ];
+    }
+}
+function validationError(path: MutablePath, expected: string, actual: string) {
     return new ValidationError(
         JSON.stringify({
             path,
             expected,
             actual,
         }),
+        path,
+        expected,
+        actual,
     );
 }
 
@@ -170,12 +200,13 @@ export function strictObject<
 }
 type Primitive = undefined | null | boolean | number | string | bigint;
 export function literal<const T extends Primitive>(value: T) {
-    const json = String(literal);
+    const expected =
+        typeof value === "string" ? JSON.stringify(value) : String(value);
     return wrap((target, path) => {
         if (target !== value) {
             throw validationError(
                 path,
-                json,
+                expected,
                 typeof value === "object" ? "object" : String(target),
             );
         }
@@ -275,12 +306,12 @@ type SchemasToUnion<T extends readonly SchemaKind[]> = {
     [i in keyof T]: Infer<T[i]>;
 }[number];
 
-const errorsCaches: string[][] = [];
+const errorsCache: never[][] = [];
 export function union<const TSchemas extends readonly SchemaKind[]>(
     schemas: TSchemas,
 ) {
     return wrap((target, path, seen) => {
-        const errors = errorsCaches.pop() ?? [];
+        const errors: ValidationError[] = errorsCache.pop() ?? [];
         try {
             for (const schema of schemas) {
                 try {
@@ -288,19 +319,25 @@ export function union<const TSchemas extends readonly SchemaKind[]>(
                     return target as SchemasToUnion<TSchemas>;
                 } catch (e) {
                     if (e instanceof ValidationError) {
-                        errors.push(e.message);
+                        errors.push(e);
                     }
                 }
+            }
+            if (errors[0] !== undefined && errors.length === 1) {
+                throw errors[0];
             }
             throw new ValidationError(
                 JSON.stringify({
                     path,
-                    errors: errors.map((message) => JSON.parse(message)),
+                    errors: errors.map((e) => JSON.parse(e.message)),
                 }),
+                path,
+                `Union<[${errors.map((e) => e.expected).join(", ")}}]>`,
+                typeof target,
             );
         } finally {
             errors.length = 0;
-            errorsCaches.push(errors);
+            errorsCache.push(errors as never[]);
         }
     });
 }
@@ -375,4 +412,22 @@ function createJsonSchema() {
 let jsonSchemaCache: Schema<Json> | undefined;
 export function json() {
     return (jsonSchemaCache ??= createJsonSchema());
+}
+
+// eslint-disable-next-line @typescript-eslint/ban-types
+export function delayed<T, TOptions extends SchemaParametersKind = {}>(
+    createSchema: () => Schema<T, TOptions>,
+) {
+    let schema: Schema<T, TOptions> | undefined;
+    return wrap((target, path, seen) => {
+        return (schema ??= createSchema())._validate(target, path, seen);
+    });
+}
+export function function_() {
+    return wrap((target, path) => {
+        if (typeof target === "function") {
+            return target as (...args: unknown[]) => unknown;
+        }
+        throw validationError(path, "Function", typeof target);
+    });
 }
